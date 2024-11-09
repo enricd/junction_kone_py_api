@@ -65,7 +65,7 @@ with cols0[0]:
     # --- Drawing CANVAS ---
     # Specify canvas parameters in application
     rel_geovertices = building_shape_to_meters(geovertices)
-    drawing_mode = st.sidebar.selectbox(
+    drawing_mode = st.selectbox(
         "Drawing tool:", ("line", "rect", "transform")
     )
 
@@ -85,7 +85,8 @@ with cols0[0]:
         width=400,
     )
 
-    plan_building_rel = {
+    json_plan = {
+        "outer_walls": rel_geovertices,
         "inner_walls": [],
         "elevators": [],
     }
@@ -110,7 +111,7 @@ if canvas_result.json_data is not None:
                 y1 = t if _y1 < 0 else t + h
                 x2 = l if _x2 < 0 else l + w
                 y2 = t if _y2 < 0 else t + h
-                plan_building_rel["inner_walls"].append(((x1, y1), (x2, y2)))
+                json_plan["inner_walls"].append(((x1, y1), (x2, y2)))
             elif object[1]["type"] == "rect":
                 pass
         
@@ -128,16 +129,16 @@ with cols0[1]:
         st.number_input("Underground floors", value=1, step=1, key="underground_floors")
 
     create_3d_building(
-        rel_geovertices, 
+        json_plan, 
         st.session_state.floor_height, 
         st.session_state.floors, 
         st.session_state.underground_floors,
     )
     
     fig = go.Figure()
-    fig.add_trace(stl2mesh3d("building_above.stl"))
+    fig.add_trace(stl2mesh3d("building_above.stl", type="above"))
     if os.path.exists("building_under.stl"):
-        fig.add_trace(stl2mesh3d("building_under.stl", underground=True))
+        fig.add_trace(stl2mesh3d("building_under.stl", type="under"))
 
     # adjust height
     fig.update_layout(
