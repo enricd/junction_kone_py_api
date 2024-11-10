@@ -1,7 +1,7 @@
 import trimesh
 import numpy as np
 
-def create_extruded_polygon(vertices, height):
+def create_extruded_polygon(vertices, height=3):
     # Create a 2D polygon
     polygon = trimesh.path.Path2D(vertices)
 
@@ -19,7 +19,7 @@ vertices = np.array([
 ])
 
 # Height of the extrusion
-height = 2.0
+height = 3.0
 
 # Create the 3D object
 extruded_polygon = create_extruded_polygon(vertices, height)

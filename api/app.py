@@ -7,7 +7,8 @@ import os
 import zipfile
 import sys
 import logging
-
+import traceback
+import json
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -38,6 +39,8 @@ async def build_3d_model(request: Request, background_tasks: BackgroundTasks):
     try:
         # Parse the JSON payload
         json_plan = await request.json()
+        with open("../tmp/plan.json", "w") as f:
+            json.dump(json_plan, f)
         logger.debug(f"Received plan: {json_plan}")
 
         response = create_3d_building(json_plan)
@@ -46,7 +49,8 @@ async def build_3d_model(request: Request, background_tasks: BackgroundTasks):
             under_file=response["under_file"],
             elevator_file=response["elevator_file"]
         )
-        logger.info(f"Response: {output_data.model_dump().keys()}")
+        print_response = {k: (len(v) if v else None) for k, v in output_data.model_dump().items()}
+        logger.info(f"Response: {print_response}")
         return output_data
 
     except Exception as e:

@@ -5,7 +5,7 @@ from stl import mesh
 import plotly.graph_objects as go
 import os
 import matplotlib.pyplot as plt
-
+import base64
 
 def latlon2meters(lat, lon):
     origin_shift = 2 * np.pi * 6378137 / 2.0
@@ -23,12 +23,15 @@ def building_shape_to_meters(geovertices):
 
 def create_3d_building(
     json_plan, 
-    floor_height=3.0, 
-    floors=1, 
-    underground_floors=0,
-    wall_thickness=0.2,
+    temp_dir="/Users/enricd/Code/erni/junction_kone_py_backend/tmp/",
     debug=False,
 ):
+    wall_thickness = 0.2
+    floor_height = json_plan["floor_height"]
+    floors = json_plan["floors"] 
+    underground_floors = json_plan["underground_floors"]
+    return_glb = json_plan["return_glb"]
+
     # Create the outer polygon
     outer_walls = json_plan["outer_walls"]
     outer_polygon = Polygon(outer_walls)
@@ -57,9 +60,22 @@ def create_3d_building(
     underground_height = underground_floors * floor_height if underground_floors > 0 else 0
     total_height = above_ground_height + underground_height
 
+    scale_factor = 1
     # Initialize elevator_polygon if it exists
-    if "elevator" in json_plan:
+    if "elevator" in json_plan and json_plan["elevator"]:
         elevator_coords = json_plan["elevator"]
+        
+        if True: #return_glb:
+            # get the distance between the first and second point
+            distance = np.sqrt((elevator_coords[0][0] - elevator_coords[1][0])**2 + (elevator_coords[0][1] - elevator_coords[1][1])**2)
+            scale_factor = distance / 2 
+            print(f"Scale factor: {scale_factor}")
+            above_ground_height *= scale_factor
+            underground_height *= scale_factor
+            total_height *= scale_factor
+
+        if (elevator_coords[0][0], elevator_coords[0][1]) == (elevator_coords[-1][0], elevator_coords[-1][1]) or len(elevator_coords) > 4:
+            elevator_coords = elevator_coords[:-1]
         elevator_polygon = Polygon(elevator_coords)
         if not elevator_polygon.is_valid:
             raise ValueError("Invalid elevator polygon.")
@@ -79,7 +95,7 @@ def create_3d_building(
         # Create floors and roof for above-ground floors
         floor_meshes_above = []
         for floor_level in range(floors + (1 if not debug else 0)):  # Include roof level
-            z_level = floor_level * floor_height
+            z_level = floor_level * floor_height * scale_factor
             # For the roof, use the outer polygon
             floor_polygon = outer_polygon
             # Subtract elevator if it exists
@@ -92,8 +108,10 @@ def create_3d_building(
             floor_meshes_above.append(floor_mesh)
 
         # Process inner walls if they exist in the plan
-        if "inner_walls" in json_plan:
+        if "inner_walls" in json_plan and json_plan["inner_walls"]:
             inner_walls_data = json_plan["inner_walls"]  # List of line segments [((x1, y1), (x2, y2)), ...]
+            if (inner_walls_data[0][0], inner_walls_data[0][1]) == (inner_walls_data[-1][0], inner_walls_data[-1][1]):
+                inner_walls_data = inner_walls_data[:-1]
             inner_walls_meshes = []
             for wall_line in inner_walls_data:
                 start_point = wall_line[0]  # (x1, y1)
@@ -125,12 +143,14 @@ def create_3d_building(
         )
 
         # Export Above-ground Mesh to STL
-        building_mesh_above.export('building_above.stl')
-        print("Above-ground building mesh exported to building_above.stl")
+        above_stl_path = os.path.join(temp_dir, 'building_above.stl')
+        building_mesh_above.export(above_stl_path)
+        print(f"Above-ground building mesh exported to {above_stl_path}")
 
-        # Export to glTF (binary .glb)
-        building_mesh_above.export('building_above.glb')
-        print("Building mesh exported to building_above.glb")
+        # Export to glTF
+        above_glb_path = os.path.join(temp_dir, 'building_above.gltf')
+        building_mesh_above.export(above_glb_path)
+        print(f"Building mesh exported to {above_glb_path}")
 
     if underground_floors > 0:
         # Extrude walls for underground floors from z=-underground_height upwards to z=0
@@ -141,7 +161,7 @@ def create_3d_building(
         # Create floors for underground floors (no ceiling at z=0)
         floor_meshes_underground = []
         for floor_level in range(underground_floors):
-            z_level = -(floor_level + 1) * floor_height  # Negative z-levels
+            z_level = -(floor_level + 1) * floor_height * scale_factor  # Negative z-levels
             floor_polygon = outer_polygon
             # Subtract elevator if it exists
             if elevator_polygon:
@@ -188,18 +208,21 @@ def create_3d_building(
         )
 
         # Export Underground Mesh to STL
-        building_mesh_underground.export('building_under.stl')
-        print("Underground building mesh exported to building_under.stl")
+        under_stl_path = os.path.join(temp_dir, 'building_under.stl')
+        building_mesh_underground.export(under_stl_path)
+        print(f"Underground building mesh exported to {under_stl_path}")
 
-        # Export to glTF (binary .glb)
-        building_mesh_underground.export('building_under.glb')
-        print("Underground building mesh exported to building_under.glb")
+        # Export to glTF 
+        under_glb_path = os.path.join(temp_dir, 'building_under.gltf')
+        building_mesh_underground.export(under_glb_path)
+        print(f"Underground building mesh exported to {under_glb_path}")
 
     else:
+        under_stl_path, under_glb_path = None, None
         # Delete the underground building mesh if it exists
         try:
-            os.remove("building_under.stl")
-            os.remove("building_under.glb")
+            os.remove(os.path.join(temp_dir, "building_under.stl"))
+            os.remove(os.path.join(temp_dir, "building_under.gltf"))
         except:
             pass
 
@@ -209,16 +232,49 @@ def create_3d_building(
         # Shift the elevator mesh down to start from z = -underground_height
         elevator_mesh.apply_translation([0, 0, -underground_height])
         # Export elevator mesh to STL and GLB
-        elevator_mesh.export('elevator.stl')
-        elevator_mesh.export('elevator.glb')
-        print("Elevator mesh exported to elevator.stl and elevator.glb")
+        elevator_stl_path = os.path.join(temp_dir, 'elevator.stl')
+        elevator_glb_path = os.path.join(temp_dir, 'elevator.gltf')
+        elevator_mesh.export(elevator_stl_path)
+        elevator_mesh.export(elevator_glb_path)
+        print(f"Elevator mesh exported to {elevator_stl_path} and {elevator_glb_path}")
     else:
+        elevator_stl_path, elevator_glb_path = None, None
         # Delete the elevator mesh if it exists
         try:
-            os.remove("elevator.stl")
-            os.remove("elevator.glb")
+            os.remove(os.path.join(temp_dir, "elevator.stl"))
+            os.remove(os.path.join(temp_dir, "elevator.gltf"))
         except:
             pass
+
+    def read_file_as_base64(file_path: str) -> str:
+        with open(file_path, "rb") as file:
+            return base64.b64encode(file.read()).decode('utf-8')
+
+    above_file_content = None
+    if above_stl_path and os.path.exists(above_stl_path):
+        if return_glb:
+            above_file_content = read_file_as_base64(above_glb_path)
+        else:
+            above_file_content = read_file_as_base64(above_stl_path)
+    under_file_content = None
+    if under_stl_path and os.path.exists(under_stl_path):
+        if return_glb:
+            under_file_content = read_file_as_base64(under_glb_path)
+        else:
+            under_file_content = read_file_as_base64(under_stl_path)
+    elevator_file_content = None
+    if elevator_stl_path and os.path.exists(elevator_stl_path):
+        if return_glb:
+            elevator_file_content = read_file_as_base64(elevator_glb_path)
+        else:
+            elevator_file_content = read_file_as_base64(elevator_stl_path)
+
+    # return the file binary content in glb if return_glb is True else return the stl file binary content 
+    return {
+        "above_file": above_file_content,
+        "under_file": under_file_content,
+        "elevator_file": elevator_file_content,
+    }
 
 
 def get_stl_color(x):
@@ -292,7 +348,13 @@ if __name__ == "__main__":
         "outer_walls": [(0, 0), (10, 0), (10, 20), (-10, 20), (-10, 10), (0, 10)],
         "inner_walls": [[(-5, 10), (-5, 20)], [(-5, 15), (10, 15)]],
         "elevator": [(5, 12), (7, 12), (7, 14), (5, 14)],
+        "floor_height": 3.0,
+        "floors": 4,
+        "underground_floors": 3,
+        "return_glb": True,
     }
 
-    create_3d_building(json_plan, floor_height=3.0, floors=4, underground_floors=3, debug=False)
+    response = create_3d_building(json_plan, debug=False)
+    print({k: len(v) for k, v in response.items()})
+
 

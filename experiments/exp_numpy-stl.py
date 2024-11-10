@@ -7,7 +7,7 @@ from stl import mesh
 # Or creating a new mesh (make sure not to overwrite the `mesh` import by
 # naming it `mesh`):
 VERTICE_COUNT = 100
-data = np.random.random(VERTICE_COUNT, dtype=mesh.Mesh.dtype)
+data = np.random(VERTICE_COUNT, dtype=mesh.Mesh.dtype)
 print(data)
 your_mesh = mesh.Mesh(data, remove_empty_areas=False)
 
